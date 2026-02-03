@@ -1,5 +1,6 @@
 from textual.app import App, ComposeResult
 from textual import work, on
+from textual.worker import Worker, WorkerState
 from textual.theme import Theme
 from textual.widgets import Button, Log, DirectoryTree, Input
 
@@ -78,11 +79,24 @@ class ProcessingApp(App):
             self.query_one("#stop-processing", Button).disabled = False
 
     @on(Button.Pressed, "#stop-processing")
-    async def stop_processing_handler(self) -> None:
+    def stop_processing_handler(self) -> None:
         if self.processing_process:
             # this was surprisingly difficult. Processing spawns a Java process, just killing the
             # Processing process doesn't kill the Java window
             os.killpg(os.getpgid(self.processing_process.pid), signal.SIGTERM)
+            # self.query_one("#stop-processing").disabled = True
+
+    @on(Worker.StateChanged)
+    def worker_state_change_handler(self, event: Worker.StateChanged) -> None:
+        worker_name = event.worker.name
+        state = event.state
+        print(f"worker name: {worker_name}, state: {state}")
+        if worker_name == "launch_processing":
+            if state == WorkerState.RUNNING:
+                self.query_one("#launch-processing", Button).disabled = True
+            if state == WorkerState.SUCCESS:
+                self.query_one("#launch-processing", Button).disabled = False
+                self.query_one("#stop-processing").disabled = True
 
     @work(exclusive=True)
     async def launch_processing(self, sketch: str) -> None:
@@ -103,7 +117,7 @@ class ProcessingApp(App):
             output_widget.write_line(line.decode().strip())
 
         await self.processing_process.wait()
-        # self.processing_process = None
+        self.processing_process = None
 
 
 if __name__ == "__main__":
