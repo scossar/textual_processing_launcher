@@ -2,7 +2,8 @@ from textual.app import App, ComposeResult
 from textual import work, on
 from textual.worker import Worker, WorkerState
 from textual.theme import Theme
-from textual.widgets import Button, Log, DirectoryTree, Input
+from textual.widgets import Button, Log, DirectoryTree, Input, Collapsible
+from textual.containers import Horizontal
 
 from typing import Iterable
 from pathlib import Path
@@ -38,6 +39,8 @@ class FilteredDirectoryTree(DirectoryTree):
 
 
 class ProcessingApp(App):
+    CSS_PATH = "styles.tcss"
+
     def __init__(self):
         super().__init__()
         self.selected_sketch_dir = None
@@ -49,13 +52,32 @@ class ProcessingApp(App):
         self.title = "Run Processing"
 
     def compose(self) -> ComposeResult:
-        yield Input("Sketch directory", id="sketch-directory")
-        yield FilteredDirectoryTree(
-            "/home/scossar/projects/processing/", id="select-sketch-dir"
-        )
-        yield Button("Launch Processing", id="launch-processing", disabled=True)
-        yield Button("Stop Processing", id="stop-processing", disabled=True)
-        yield Log("Processing log", id="processing-log")
+        with Horizontal(id="sketchbook-directory") as container:
+            container.border_title = "Sketchbook Directory"
+            yield Input("~/sketchbook/")
+        with Collapsible(
+            title="Select sketch", id="directory-tree-container"
+        ) as container:
+            container.border_title = None
+            yield FilteredDirectoryTree("~/sketchbook/", id="select-sketch-dir")
+        with Horizontal():
+            yield Button(
+                "Run",
+                id="launch-processing",
+                variant="success",
+                disabled=True,
+            )
+            yield Button(
+                "Stop",
+                id="stop-processing",
+                variant="warning",
+                disabled=True,
+            )
+
+        with Log(
+            "Processing log", id="processing-log", auto_scroll=True
+        ) as processing_logs:
+            processing_logs.border_title = "Processing logs"
 
     @on(Input.Submitted, "#sketch-directory")
     def sketch_directory_handler(self, event: Input.Submitted):
@@ -70,7 +92,8 @@ class ProcessingApp(App):
         self.selected_sketch_dir = event.path
         processing_button = self.query_one("#launch-processing")
         processing_button.disabled = False
-        processing_button.label = f"Launch {self.selected_sketch_dir.stem}"
+        container_title = f"Selected sketch: {self.selected_sketch_dir.stem}"
+        self.query_one("#directory-tree-container").border_title = container_title
 
     @on(Button.Pressed, "#launch-processing")
     def launch_processing_handler(self) -> None:
@@ -81,22 +104,24 @@ class ProcessingApp(App):
     @on(Button.Pressed, "#stop-processing")
     def stop_processing_handler(self) -> None:
         if self.processing_process:
-            # this was surprisingly difficult. Processing spawns a Java process, just killing the
-            # Processing process doesn't kill the Java window
+            # Processing spawns a Java process, just killing the
+            # Processing process doesn't kill the Java window; killpg is "kill process group"
             os.killpg(os.getpgid(self.processing_process.pid), signal.SIGTERM)
-            # self.query_one("#stop-processing").disabled = True
 
     @on(Worker.StateChanged)
     def worker_state_change_handler(self, event: Worker.StateChanged) -> None:
+        # TODO: handle WorkerState.ERROR and WorkerState.CANCELLED
         worker_name = event.worker.name
         state = event.state
         print(f"worker name: {worker_name}, state: {state}")
         if worker_name == "launch_processing":
             if state == WorkerState.RUNNING:
                 self.query_one("#launch-processing", Button).disabled = True
+                self.query_one(FilteredDirectoryTree).disabled = True
             if state == WorkerState.SUCCESS:
                 self.query_one("#launch-processing", Button).disabled = False
                 self.query_one("#stop-processing").disabled = True
+                self.query_one(FilteredDirectoryTree).disabled = False
 
     @work(exclusive=True)
     async def launch_processing(self, sketch: str) -> None:

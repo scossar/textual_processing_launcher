@@ -1,0 +1,34 @@
+#sketchbook-directory {
+  border: solid $primary;
+}
+
+Input {
+    border: solid $primary;
+  }
+
+#directory-tree-container {
+  border: solid $primary;
+  padding: 1 0 1 0;
+}
+
+DirectoryTree {
+    height: auto;
+    margin: 1 0 1 0;
+    border: solid $primary;
+  }
+
+Log {
+      border: solid $primary;
+      margin: 1 0 1 0;
+      padding: 1;
+    }
+
+Horizontal {
+    height: auto;
+    border-title-align: left;
+  }
+
+
+Button {
+    margin: 1 2 1 2;
+  }
