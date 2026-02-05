@@ -132,7 +132,8 @@ class ProcessingApp(App):
             f"--sketch={sketch}",
             "--run",
             stdout=asyncio.subprocess.PIPE,
-            preexec_fn=os.setsid,  # creates a process group, so processing can be stopped from the app
+            start_new_session=True,
+            # preexec_fn=os.setsid,  # creates a process group, so processing can be stopped from the app
         )
 
         while True:
