@@ -18,7 +18,7 @@ void setup() {
   myLocation = new NetAddress("127.0.0.1", 9000);
 
   if (messageDetailsSent == false) {
-    sendMessageDetails();
+    sendOscConfigDetails();
     messageDetailsSent = true;
   }
 }
@@ -27,13 +27,13 @@ void draw() {
   point(0, 0);
 }
 
-void sendMessageDetails() {
-  OscMessage messageDetails = new OscMessage("/sketch/messages");
-  messageDetails.add("/centerx");
-  messageDetails.add("f");
-  messageDetails.add("center_x");
+void sendOscConfigDetails() {
+  OscMessage configDetails = new OscMessage("/osc/config");
+  configDetails.add("/centerx");
+  configDetails.add("f");
+  configDetails.add("center_x");
 
-  oscP5.send(messageDetails, myLocation);
+  oscP5.send(configDetails, myLocation);
 }
 
 void oscEvent(OscMessage message) {

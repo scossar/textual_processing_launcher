@@ -4,6 +4,7 @@ from textual.worker import Worker, WorkerState
 from textual.theme import Theme
 from textual.widgets import Button, Log, DirectoryTree, Input, Collapsible
 from textual.containers import Horizontal
+from textual.message import Message
 
 from typing import Iterable
 from pathlib import Path
@@ -18,19 +19,29 @@ processing = Address("localhost", 12000)
 
 
 class OscServer(ServerThread):
-    def __init__(self, port, write_callback):
+    def __init__(self, port, app):
         ServerThread.__init__(self, port)
-        self.write = write_callback
+        self.app = app
 
-    @make_method("/sketch/messages", "sss")
-    def pid_callback(self, path, args):
-        route, types, name = args  # trailing comma to unpack single value list into pid
-        self.write(f"\u2190 Received response from '{path}': {args}")
+    @make_method("/osc/config", "sss")
+    def osc_config_callback(self, path, args):
+        oscpath, types, name = args
+        self.app.call_from_thread(
+            # f"\u2190 Received response from '{path}': {args}"
+            self.app.post_message,
+            OscMessageReceived(path, args),
+        )
 
     @make_method(None, None)
     def fallback(self, path, args):
-        response = args
-        self.write(f"\u2190 Received response from '{path}': {response}")
+        self.app.call_from_thread(self.app.post_message, OscMessageReceived(path, args))
+
+
+class OscMessageReceived(Message):
+    def __init__(self, path: str, args: tuple):
+        super().__init__()
+        self.path = path
+        self.args = args
 
 
 flexoki_light_theme = Theme(
@@ -72,13 +83,13 @@ class ProcessingApp(App):
         self.theme = "flexoki_light"
         self.title = "Run Processing"
 
-        osc_log = self.query_one("#osc-log", Log)
+        #
+        # def write_to_log(message):
+        #     self.call_from_thread(osc_log.write_line, message)
 
-        def write_to_log(message):
-            self.call_from_thread(osc_log.write_line, message)
-
-        self.osc_server = OscServer(9000, write_to_log)
+        self.osc_server = OscServer(9000, app)
         self.osc_server.start()
+        osc_log = self.query_one("#osc-log", Log)
         osc_log.write_line("OSC Server listening on port 9000")
 
     def compose(self) -> ComposeResult:
@@ -104,12 +115,27 @@ class ProcessingApp(App):
                 disabled=True,
             )
 
+        yield Horizontal(id="osc-widgets")
+
         with Log(
             "Processing log", id="processing-log", auto_scroll=True
         ) as processing_logs:
             processing_logs.border_title = "Processing logs"
         with Log("OSC log", id="osc-log", auto_scroll=True) as osc_log:
             osc_log.border_title = "OSC logs"
+
+    @on(OscMessageReceived)
+    async def handle_osc_message(self, event: OscMessageReceived) -> None:
+        osc_log = self.query_one("#osc-log", Log)
+        osc_log.write_line(f"\u2190 Received from '{event.path}': {event.args}")
+
+        if event.path == "/osc/config":
+            message_path, types, name = event.args
+            new_widget = Input(id=f"osc-{name}")
+            new_widget.styles.border = ("solid", "black")
+            new_widget.border_title = name
+            container = self.query_one("#osc-widgets")
+            await container.mount(new_widget)
 
     @on(Input.Submitted, "#sketchbook-directory")
     def sketch_directory_handler(self, event: Input.Submitted):
