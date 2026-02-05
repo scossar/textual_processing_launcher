@@ -12,6 +12,26 @@ import asyncio
 import os
 import signal
 
+from pyliblo3 import ServerThread, Address, make_method, send
+
+processing = Address("localhost", 12000)
+
+
+class OscServer(ServerThread):
+    def __init__(self, port, write_callback):
+        ServerThread.__init__(self, port)
+        self.write = write_callback
+
+    @make_method("/sketch/messages", "sss")
+    def pid_callback(self, path, args):
+        route, types, name = args  # trailing comma to unpack single value list into pid
+        self.write(f"\u2190 Received response from '{path}': {args}")
+
+    @make_method(None, None)
+    def fallback(self, path, args):
+        response = args
+        self.write(f"\u2190 Received response from '{path}': {response}")
+
 
 flexoki_light_theme = Theme(
     name="flexoki_light",
@@ -45,21 +65,31 @@ class ProcessingApp(App):
         super().__init__()
         self.selected_sketch_dir = None
         self.processing_process = None
+        self.osc_server = None
 
     def on_mount(self):
         self.register_theme(flexoki_light_theme)
         self.theme = "flexoki_light"
         self.title = "Run Processing"
 
+        osc_log = self.query_one("#osc-log", Log)
+
+        def write_to_log(message):
+            self.call_from_thread(osc_log.write_line, message)
+
+        self.osc_server = OscServer(9000, write_to_log)
+        self.osc_server.start()
+        osc_log.write_line("OSC Server listening on port 9000")
+
     def compose(self) -> ComposeResult:
         with Horizontal(id="sketchbook-directory-container") as container:
             container.border_title = "Sketchbook Directory"
-            yield Input("~/sketchbook/", id="sketchbook-directory")
+            yield Input("~/projects/processing", id="sketchbook-directory")
         with Collapsible(
             title="Select sketch", id="directory-tree-container"
         ) as container:
             container.border_title = None
-            yield FilteredDirectoryTree("~/sketchbook/", id="select-sketch-dir")
+            yield FilteredDirectoryTree("~/projects/processing", id="select-sketch-dir")
         with Horizontal():
             yield Button(
                 "Run",
@@ -78,6 +108,8 @@ class ProcessingApp(App):
             "Processing log", id="processing-log", auto_scroll=True
         ) as processing_logs:
             processing_logs.border_title = "Processing logs"
+        with Log("OSC log", id="osc-log", auto_scroll=True) as osc_log:
+            osc_log.border_title = "OSC logs"
 
     @on(Input.Submitted, "#sketchbook-directory")
     def sketch_directory_handler(self, event: Input.Submitted):
@@ -116,6 +148,9 @@ class ProcessingApp(App):
                     await proc.wait()
                 except ProcessLookupError:
                     pass
+            finally:
+                output_widget = self.query_one("#processing-log", Log)
+                output_widget.write_line("Finished.")
 
     @on(Worker.StateChanged)
     def worker_state_change_handler(self, event: Worker.StateChanged) -> None:
