@@ -1,4 +1,4 @@
-#sketchbook-directory {
+#sketchbook-directory-container {
   border: solid $primary;
 }
 

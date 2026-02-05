@@ -52,9 +52,9 @@ class ProcessingApp(App):
         self.title = "Run Processing"
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="sketchbook-directory") as container:
+        with Horizontal(id="sketchbook-directory-container") as container:
             container.border_title = "Sketchbook Directory"
-            yield Input("~/sketchbook/")
+            yield Input("~/sketchbook/", id="sketchbook-directory")
         with Collapsible(
             title="Select sketch", id="directory-tree-container"
         ) as container:
@@ -79,7 +79,7 @@ class ProcessingApp(App):
         ) as processing_logs:
             processing_logs.border_title = "Processing logs"
 
-    @on(Input.Submitted, "#sketch-directory")
+    @on(Input.Submitted, "#sketchbook-directory")
     def sketch_directory_handler(self, event: Input.Submitted):
         sketch_directory = event.input.value
         directory_tree_widget = self.query_one("#select-sketch-dir")
@@ -102,18 +102,22 @@ class ProcessingApp(App):
             self.query_one("#stop-processing", Button).disabled = False
 
     @on(Button.Pressed, "#stop-processing")
-    def stop_processing_handler(self) -> None:
+    async def stop_processing_handler(self) -> None:
         if self.processing_process:
+            proc = self.processing_process
             # Processing spawns a Java process, just killing the
             # Processing process doesn't kill the Java window; killpg is "kill process group"
-            os.killpg(os.getpgid(self.processing_process.pid), signal.SIGTERM)
+            # the call to setsid() made in th ecall to create_subprocess_exec
+            # makes the calling process (self.processing_process) the process group leader
+            # so killing it will kill the processing window
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            await proc.wait()
 
     @on(Worker.StateChanged)
     def worker_state_change_handler(self, event: Worker.StateChanged) -> None:
         # TODO: handle WorkerState.ERROR and WorkerState.CANCELLED
         worker_name = event.worker.name
         state = event.state
-        print(f"worker name: {worker_name}, state: {state}")
         if worker_name == "launch_processing":
             if state == WorkerState.RUNNING:
                 self.query_one("#launch-processing", Button).disabled = True
@@ -132,8 +136,7 @@ class ProcessingApp(App):
             f"--sketch={sketch}",
             "--run",
             stdout=asyncio.subprocess.PIPE,
-            start_new_session=True,
-            # preexec_fn=os.setsid,  # creates a process group, so processing can be stopped from the app
+            start_new_session=True,  # calls (the system call) setsid()
         )
 
         while True:
